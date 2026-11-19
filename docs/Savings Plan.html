@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Savings Plan Monte Carlo Simulation</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--navy:#183b56;--teal:#176b87;--bg:#f3f6fa;--card:#fff;--soft:#edf3f7;--ink:#263238}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:#fff;text-align:center;padding:24px 16px}header h1{margin:0 0 8px}
+main{max-width:1250px;margin:24px auto;padding:0 16px;display:grid;gap:18px}
+.panel{background:var(--card);padding:22px;border-radius:12px;box-shadow:0 2px 10px #00000010}
+.layout{display:grid;grid-template-columns:330px 1fr;gap:18px}.controls label{display:flex;justify-content:space-between;gap:12px;margin:16px 0 7px;font-weight:600}.val{color:var(--teal);white-space:nowrap}
+input[type=range]{width:100%;accent-color:var(--teal)}input[type=number]{width:115px;padding:7px;border:1px solid #ccd5df;border-radius:6px}
+button{border:0;border-radius:7px;padding:10px 14px;margin:12px 5px 0 0;background:var(--teal);color:white;cursor:pointer;font-weight:600}button.secondary{background:#64748b}button:disabled{opacity:.5;cursor:not-allowed}
+.small{font-size:13px;color:#5b6873;line-height:1.5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+.metric{background:var(--soft);padding:14px;border-radius:9px}.metric span{display:block;font-size:13px;color:#52616b}.metric strong{display:block;font-size:20px;margin-top:7px;overflow-wrap:anywhere}
+.chart-wrap{height:350px;position:relative}canvas{max-width:100%}
+.section-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+details{margin-top:20px;line-height:1.6}summary{cursor:pointer;font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:14px;margin-top:12px}th,td{padding:9px;border-bottom:1px solid #e3e8ed;text-align:right}th:first-child,td:first-child{text-align:left}th{background:#f5f7f9}
+.note{background:#fff8e8;border-left:4px solid #d69e36;padding:11px 13px;border-radius:5px;font-size:13px;line-height:1.5}
+.status{font-size:13px;color:#52616b;margin-top:10px}
+@media(max-width:850px){.layout,.section-grid{grid-template-columns:1fr}.chart-wrap{height:300px}}
+</style>
+</head>
+<body>
+<header>
+<h1>Savings Plan Monte Carlo Simulation</h1>
+<p>Will a savings plan reach its goal under uncertain returns and inflation?</p>
+</header>
+<main>
+<div class="layout">
+<section class="panel controls">
+<h2>1. Savings Plan Configuration</h2>
+<label for="initial">Initial savings <span class="val" id="initialValue">LKR 100,000</span></label>
+<input id="initial" type="range" min="0" max="1000000" step="10000" value="100000">
+<label for="contribution">Monthly contribution <span class="val" id="contributionValue">LKR 15,000</span></label>
+<input id="contribution" type="range" min="0" max="100000" step="5000" value="15000">
+<label for="target">Target in today's LKR <span class="val" id="targetValue">LKR 5,000,000</span></label>
+<input id="target" type="range" min="500000" max="20000000" step="250000" value="5000000">
+<label for="years">Investment period <span class="val" id="yearsValue">10 years</span></label>
+<input id="years" type="range" min="1" max="30" step="1" value="10">
+<label for="paths">Monte Carlo paths <span class="val" id="pathsValue">10,000</span></label>
+<input id="paths" type="range" min="1000" max="50000" step="1000" value="10000">
+<label for="inflation">Annual inflation drift <span class="val" id="inflationValue">5.0%</span></label>
+<input id="inflation" type="range" min="0" max="10" step="0.5" value="5">
+<label for="seed">Random seed <input id="seed" type="number" min="1" max="999999999" value="42"></label>
+<button id="startButton">Start</button><button id="pauseButton" class="secondary">Pause</button><button id="resetButton" class="secondary">Reset</button>
+<div class="status" id="status">Ready. Default settings match the notebook's initial illustrative parameters.</div>
+<details><summary>Model assumptions and how to use</summary>
+<p>This client-side simulation models monthly savings accumulation. Investment returns follow a GBM-style log-return process with two market regimes selected using a two-state DTMC. Inflation is also stochastic and follows a GBM-style process.</p>
+<ul>
+<li>Initial savings: LKR 100,000; monthly contribution: LKR 15,000; target: LKR 5,000,000 in today's purchasing power.</li>
+<li>Low-return regime: annual drift 3%, volatility 12%.</li>
+<li>High-return regime: annual drift 9%, volatility 18%.</li>
+<li>Transition matrix: [[0.90, 0.10], [0.15, 0.85]]. Every path starts in the Low-return regime.</li>
+<li>Inflation volatility: 2% annually. Investment-return and inflation shocks are independent.</li>
+<li>Returns are applied before each end-of-month contribution. Final nominal savings are divided by cumulative inflation.</li>
+<li>Parameters are illustrative assumptions, not forecasts or financial advice.</li>
+</ul>
+<p>Adjust the controls and press Start. Pause/Resume temporarily stops or continues the current run. Reset clears the results. Run sensitivity analysis to compare the notebook's contribution and inflation scenarios.</p>
+</details>
+</section>
+<section class="panel">
+<h2>2. Monte Carlo Simulation Results</h2>
+<div class="chart-wrap"><canvas id="distributionChart"></canvas></div>
+<div class="grid">
+<div class="metric"><span>Simulation progress</span><strong id="progress">0%</strong></div>
+<div class="metric"><span>Paths simulated</span><strong id="pathsDone">0</strong></div>
+<div class="metric"><span>Estimated success probability</span><strong id="successProbability">—</strong></div>
+<div class="metric"><span>95% Wilson confidence interval</span><strong id="confidenceInterval">—</strong></div>
+<div class="metric"><span>Mean final real savings</span><strong id="meanSavings">—</strong></div>
+<div class="metric"><span>Median final real savings</span><strong id="medianSavings">—</strong></div>
+</div>
+<div class="note" style="margin-top:14px">A path is successful when its final savings, converted to today's purchasing power, are at least the target. The Wilson interval quantifies Monte Carlo uncertainty in the estimated success probability.</div>
+</section>
+</div>
+
+<section class="panel">
+  <h2>3. Sensitivity Analysis</h2>
+  <p class="small">Explore how different monthly contributions and inflation rates affect the probability of reaching your savings target.</p>
+
+  <h3>Base settings from Section 1</h3>
+  <div class="grid" id="sensitivityBaseSettings">
+    <div class="metric"><span>Initial savings</span><strong id="sensitivityInitial">—</strong></div>
+    <div class="metric"><span>Target savings</span><strong id="sensitivityTarget">—</strong></div>
+    <div class="metric"><span>Investment period</span><strong id="sensitivityYears">—</strong></div>
+    <div class="metric"><span>Paths per scenario</span><strong>10,000</strong></div>
+  </div>
+  <p class="small">These settings are automatically taken from Section 1. Only monthly contribution and inflation are varied below.</p>
+
+  <h3>Scenario values</h3>
+  <div class="section-grid">
+    <div>
+      <label for="customContributions">Monthly contributions (LKR)</label>
+      <input id="customContributions" type="text" value="15000, 25000, 35000, 50000, 75000" style="width:100%;padding:9px;border:1px solid #ccd5df;border-radius:6px">
+      <p class="small">Enter 1–5 values separated by commas.</p>
+    </div>
+    <div>
+      <label for="customInflations">Annual inflation rates (%)</label>
+      <input id="customInflations" type="text" value="2, 3.5, 5, 6.5" style="width:100%;padding:9px;border:1px solid #ccd5df;border-radius:6px">
+      <p class="small">Enter 1–5 values between 0 and 20.</p>
+    </div>
+  </div>
+
+  <button id="sensitivityButton">Run Sensitivity Analysis</button>
+  <span class="status" id="sensitivityStatus">Enter scenario values and run the analysis.</span>
+
+  <div class="metric" style="margin-top:14px">
+    <span>Best-performing scenario</span>
+    <strong id="sensitivityBest">Run the analysis to see the best scenario.</strong>
+  </div>
+
+  <h3>Comparison Chart</h3>
+  <div class="chart-wrap"><canvas id="sensitivityChart"></canvas></div>
+
+  <h3>Scenario Results</h3>
+  <div style="overflow-x:auto">
+    <table id="sensitivityTable">
+      <thead><tr>
+        <th>Monthly contribution</th><th>Inflation rate</th>
+        <th>Success probability</th><th>95% Wilson CI</th><th>Median real savings</th>
+      </tr></thead>
+      <tbody><tr><td colspan="5" style="text-align:center">Run the analysis to see results.</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section-grid">
+<div class="panel">
+<h2>4. Market Regime Model</h2>
+<p>The simulation uses the notebook's fixed two-state Markov chain. The theoretical assumptions remain fixed, while the observed regime frequencies and transitions below update from the latest main simulation.</p>
+
+<h3>Model assumptions</h3>
+<table>
+<thead><tr><th>Current regime</th><th>Next Low</th><th>Next High</th><th>Annual drift</th><th>Annual volatility</th></tr></thead>
+<tbody>
+<tr><td>Low-return</td><td>90%</td><td>10%</td><td>3%</td><td>12%</td></tr>
+<tr><td>High-return</td><td>15%</td><td>85%</td><td>9%</td><td>18%</td></tr>
+</tbody>
+</table>
+
+<h3>Observed results from the latest simulation</h3>
+<div class="grid">
+  <div class="metric"><span>Low-return frequency</span><strong id="observedLowFrequency">—</strong></div>
+  <div class="metric"><span>High-return frequency</span><strong id="observedHighFrequency">—</strong></div>
+</div>
+<table>
+<thead><tr><th>Observed transition</th><th>Low-return</th><th>High-return</th></tr></thead>
+<tbody>
+<tr><td>From Low-return</td><td id="observedLowToLow">—</td><td id="observedLowToHigh">—</td></tr>
+<tr><td>From High-return</td><td id="observedHighToLow">—</td><td id="observedHighToHigh">—</td></tr>
+</tbody>
+</table>
+<p class="small" id="marketRegimeStatus">Run the main simulation to calculate observed market-regime statistics. Values are aggregated across all simulated paths and months.</p>
+</div>
+<div class="panel">
+<h2>5. Interpretation</h2>
+<p id="interpretation" class="small">Run the simulation to receive a summary of the estimated probability of reaching the target and the final real-savings distribution.</p>
+<p class="note">This is an educational simulation. Actual investment returns, inflation, fees, taxes and personal circumstances may differ from the illustrative assumptions.</p>
+</div>
+</section>
+</main>
+<script src="script.js"></script>
+</body>
+</html>
