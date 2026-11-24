@@ -2,6 +2,6 @@
 
 | File | Description | Source (with link) | Licence | Date accessed |
 |---|---|---|---|---|
-| [file.csv] | [what it contains] | [where it came from] | [e.g. CC BY 4.0] | [YYYY-MM-DD] |
+| None | No external datasets used. All investment returns, inflation values and savings outcomes are generated through Monte Carlo simulation. | Generated internally by the Python simulation using NumPy. | Not applicable | Not applicable |
 
-Keep files small (a few MB at most). If you collected the data yourself (e.g. arrival counts), describe how, and record counts as aggregates only: no personal data.
+All simulation data is generated using the model's defined assumptions, random processes and seed. No external datasets or personal data are used.
